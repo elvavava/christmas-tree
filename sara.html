@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Birthday Ski Queen</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Montserrat:wght@300;600&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Montserrat', sans-serif;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        h1 {
+            position: absolute;
+            top: 20px;
+            font-family: 'Cinzel', serif;
+            font-size: min(2rem, 5vw);
+            color: #A7D8DE;
+            text-shadow: 0 0 10px rgba(167, 216, 222, 0.5);
+            margin: 0;
+            opacity: 0.8;
+        }
+
+        #input-container {
+            pointer-events: auto;
+            background: rgba(10, 10, 20, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 20px;
+            border: 1px solid #7B52AB;
+            box-shadow: 0 0 30px rgba(123, 82, 171, 0.3);
+            text-align: center;
+            transition: opacity 1s;
+        }
+
+        input {
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid #A7D8DE;
+            color: white;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.2rem;
+            padding: 10px;
+            text-align: center;
+            outline: none;
+            width: 250px;
+        }
+
+        button {
+            display: block;
+            margin: 20px auto 0;
+            background: linear-gradient(45deg, #7B52AB, #A7D8DE);
+            border: none;
+            padding: 10px 30px;
+            color: white;
+            font-family: 'Cinzel', serif;
+            font-weight: bold;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover { transform: scale(1.1); }
+
+        #final-wish {
+            position: absolute;
+            top: 30%;
+            font-family: 'Cinzel', serif;
+            font-size: min(4rem, 8vw);
+            background: linear-gradient(to bottom, #FFF, #D4AF37);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            opacity: 0;
+            text-shadow: 0 0 30px rgba(212, 175, 55, 0.8);
+            transform: scale(0.5);
+        }
+
+        #canvas-container { position: absolute; top: 0; left: 0; z-index: 1; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <h1>Happy Birthday, Ski Queen</h1>
+        
+        <div id="input-container">
+            <div style="color: #A7D8DE; margin-bottom: 10px; font-size: 0.9rem;">MAKE A WISH & START SKIING</div>
+            <input type="text" id="wish-input" placeholder="Enter your wish..." autocomplete="off">
+            <button onclick="startSkiing()">RIDE TO THE TOP</button>
+        </div>
+
+        <div id="final-wish"></div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script>
+        const CONFIG = {
+            colors: {
+                bg: 0x000000,
+                ice: 0xA7D8DE,
+                purple: 0x7B52AB,
+                gold: 0xFFD700
+            },
+            mountainHeight: 15
+        };
+
+        let scene, camera, renderer, composer;
+        let mountain, skier, aurora;
+        let fireworks = [];
+        let particles = [];
+        let time = 0;
+        let isSkiing = false;
+
+        init();
+        animate();
+
+        function init() {
+            // 1. Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(CONFIG.colors.bg);
+            scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.02);
+
+            // 2. Camera (Low angle to look up at mountain)
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, -5, 35);
+            camera.lookAt(0, 5, 0);
+
+            // 3. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            // Critical for avoiding white screen
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.8; 
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // 4. Post Processing (Bloom)
+            const renderPass = new THREE.RenderPass(scene, camera);
+            const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.2;
+            bloomPass.strength = 1.2; // Nice glow
+            bloomPass.radius = 0.5;
+
+            composer = new THREE.EffectComposer(renderer);
+            composer.addPass(renderPass);
+            composer.addPass(bloomPass);
+
+            // 5. World Objects
+            createAurora();
+            createMountain();
+            createStars();
+            createSkier();
+            
+            // Lighting
+            const ambient = new THREE.AmbientLight(0x404040);
+            scene.add(ambient);
+            const spot = new THREE.SpotLight(CONFIG.colors.ice, 2);
+            spot.position.set(20, 20, 20);
+            spot.lookAt(0,0,0);
+            scene.add(spot);
+
+            window.addEventListener('resize', onResize);
+        }
+
+        // --- OBJECTS ---
+
+        function createAurora() {
+            // Procedural Aurora Shader
+            const geometry = new THREE.PlaneGeometry(200, 100);
+            const material = new THREE.ShaderMaterial({
+                uniforms: { uTime: { value: 0 } },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+                `,
+                fragmentShader: `
+                    uniform float uTime;
+                    varying vec2 vUv;
+                    void main() {
+                        float t = uTime * 0.2;
+                        float wave = sin(vUv.x * 6.0 + t) * 0.2 + sin(vUv.x * 12.0 - t) * 0.1;
+                        float y = vUv.y + wave;
+                        float glow = smoothstep(0.2, 0.8, 1.0 - abs(y - 0.5) * 2.0);
+                        
+                        vec3 col = mix(vec3(0.0), vec3(0.1, 0.8, 0.5), glow * 0.6); // Green
+                        col += vec3(0.5, 0.0, 0.8) * glow * 0.3; // Purple
+                        
+                        gl_FragColor = vec4(col, glow * 0.6);
+                    }
+                `,
+                side: THREE.DoubleSide,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+            aurora = new THREE.Mesh(geometry, material);
+            aurora.position.set(0, 10, -20);
+            scene.add(aurora);
+        }
+
+        function createMountain() {
+            // Crystal Mountain
+            const count = 1500;
+            const geo = new THREE.TetrahedronGeometry(0.5, 0); // Sharp crystals
+            const mat = new THREE.MeshStandardMaterial({
+                color: CONFIG.colors.ice,
+                roughness: 0.1,
+                metalness: 0.8,
+                emissive: CONFIG.colors.purple,
+                emissiveIntensity: 0.1
+            });
+            
+            mountain = new THREE.InstancedMesh(geo, mat, count);
+            const dummy = new THREE.Object3D();
+            
+            for(let i=0; i<count; i++) {
+                const t = i / count;
+                const angle = i * 0.2;
+                // Shape: Wide base, sharp peak
+                const r = 18 * Math.pow(t, 1.2); 
+                const y = CONFIG.mountainHeight - t * 30;
+                const x = Math.cos(angle) * r;
+                const z = Math.sin(angle) * r;
+                
+                dummy.position.set(x, y, z);
+                dummy.rotation.set(Math.random()*3, Math.random()*3, Math.random()*3);
+                const s = Math.random() * 1.5;
+                dummy.scale.set(s,s,s);
+                dummy.updateMatrix();
+                mountain.setMatrixAt(i, dummy.matrix);
+            }
+            scene.add(mountain);
+        }
+
+        function createStars() {
+            const geo = new THREE.BufferGeometry();
+            const pos = [];
+            for(let i=0; i<1000; i++) pos.push((Math.random()-0.5)*100, (Math.random()-0.5)*100, -30);
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            const mat = new THREE.PointsMaterial({color: 0xFFFFFF, size: 0.2});
+            scene.add(new THREE.Points(geo, mat));
+        }
+
+        function createSkier() {
+            // Create a texture for the skier using Canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.font = "50px Arial";
+            ctx.fillStyle = "white";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("⛷️", 32, 32);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: tex, color: 0xFFFFFF });
+            
+            skier = new THREE.Sprite(mat);
+            skier.scale.set(3, 3, 1);
+            skier.position.set(0, -15, 20); // Start at bottom
+            
+            // Add a light to the skier (Magic glow)
+            const light = new THREE.PointLight(CONFIG.colors.gold, 1, 10);
+            skier.add(light);
+            
+            scene.add(skier);
+        }
+
+        // --- ACTION ---
+
+        function startSkiing() {
+            const input = document.getElementById('wish-input');
+            const val = input.value.trim() || "Best Wishes!";
+            
+            // Hide UI
+            gsap.to('#input-container', { opacity: 0, pointerEvents: 'none', duration: 1 });
+            
+            isSkiing = true;
+            
+            // Animate Skier going UP the mountain
+            // Path: Bottom -> Mid -> Top
+            const tl = gsap.timeline({
+                onUpdate: () => {
+                    // Camera follows skier
+                    camera.position.x = skier.position.x * 0.5;
+                    camera.position.y = skier.position.y - 5;
+                    camera.lookAt(0, CONFIG.mountainHeight, 0);
+                },
+                onComplete: () => {
+                    triggerFireworks(val);
+                }
+            });
+
+            // Zig Zag up
+            tl.to(skier.position, { x: 5, y: -5, z: 12, duration: 2, ease: "power1.inOut" })
+              .to(skier.position, { x: -3, y: 5, z: 5, duration: 2, ease: "power1.inOut" })
+              .to(skier.position, { x: 0, y: CONFIG.mountainHeight + 1, z: 0, duration: 2, ease: "power2.out" }); // Summit
+
+            // Scale down slightly as it goes away
+            gsap.to(skier.scale, { x: 2, y: 2, duration: 6 });
+        }
+
+        function triggerFireworks(text) {
+            isSkiing = false;
+            
+            // Show Text
+            const textEl = document.getElementById('final-wish');
+            textEl.innerText = text;
+            gsap.to(textEl, { opacity: 1, scale: 1, duration: 1, ease: "back.out(1.7)" });
+
+            // Launch Fireworks loop
+            let count = 0;
+            const interval = setInterval(() => {
+                createFirework(
+                    (Math.random() - 0.5) * 20, // Random X
+                    CONFIG.mountainHeight + 5 + Math.random() * 10, // High Y
+                    (Math.random() - 0.5) * 10 // Random Z
+                );
+                count++;
+                if(count > 10) clearInterval(interval);
+            }, 500);
+        }
+
+        function createFirework(x, y, z) {
+            const color = Math.random() > 0.5 ? CONFIG.colors.gold : CONFIG.colors.purple;
+            const particleCount = 50;
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            const velocities = [];
+
+            for(let i=0; i<particleCount; i++) {
+                positions.push(x, y, z);
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 0.5 + 0.2;
+                velocities.push(
+                    Math.cos(angle) * speed,
+                    (Math.random() - 0.5) * speed,
+                    Math.sin(angle) * speed
+                );
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            const material = new THREE.PointsMaterial({
+                color: color,
+                size: 0.5,
+                transparent: true,
+                blending: THREE.AdditiveBlending
+            });
+
+            const points = new THREE.Points(geometry, material);
+            points.userData = { vel: velocities, life: 1.0 };
+            scene.add(points);
+            fireworks.push(points);
+        }
+
+        // --- LOOP ---
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+
+            if(aurora) aurora.material.uniforms.uTime.value = time;
+            
+            // Rotate Mountain gently
+            if(mountain) mountain.rotation.y = Math.sin(time * 0.1) * 0.1;
+
+            // Skier Trail (Dust)
+            if(isSkiing && skier) {
+                if(Math.random() > 0.5) {
+                    const el = document.createElement('div'); // Logic only
+                    // Add particle to scene
+                    const geo = new THREE.PlaneGeometry(0.2, 0.2);
+                    const mat = new THREE.MeshBasicMaterial({color: CONFIG.colors.ice, transparent: true});
+                    const mesh = new THREE.Mesh(geo, mat);
+                    mesh.position.copy(skier.position);
+                    mesh.lookAt(camera.position);
+                    scene.add(mesh);
+                    particles.push({mesh, life: 1.0});
+                }
+            }
+
+            // Update Fireworks
+            for(let i = fireworks.length - 1; i >= 0; i--) {
+                const fw = fireworks[i];
+                const positions = fw.geometry.attributes.position.array;
+                const vels = fw.userData.vel;
+                
+                fw.userData.life -= 0.015;
+                fw.material.opacity = fw.userData.life;
+
+                for(let j=0; j<vels.length/3; j++) {
+                    positions[j*3] += vels[j*3];     // X
+                    positions[j*3+1] += vels[j*3+1] - 0.01; // Y (Gravity)
+                    positions[j*3+2] += vels[j*3+2]; // Z
+                }
+                fw.geometry.attributes.position.needsUpdate = true;
+
+                if(fw.userData.life <= 0) {
+                    scene.remove(fw);
+                    fireworks.splice(i, 1);
+                }
+            }
+
+            // Update Trail Particles
+            for(let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life -= 0.02;
+                p.mesh.material.opacity = p.life;
+                p.mesh.scale.setScalar(p.life);
+                if(p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                }
+            }
+
+            composer.render();
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
